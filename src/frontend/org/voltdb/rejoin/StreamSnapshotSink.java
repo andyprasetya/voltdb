@@ -21,6 +21,7 @@ import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Queue;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.voltcore.logging.VoltLogger;
@@ -34,6 +35,7 @@ import org.voltdb.TheHashinator;
 import org.voltdb.VoltDB;
 import org.voltdb.VoltTable;
 import org.voltdb.dtxn.UndoAction;
+import org.voltdb.exceptions.ConstraintFailureException;
 import org.voltdb.jni.ExecutionEngine.LoadTableCaller;
 import org.voltdb.utils.CachedByteBufferAllocator;
 
@@ -49,6 +51,7 @@ import com.google_voltpatches.common.base.Preconditions;
  */
 public class StreamSnapshotSink {
     private static final VoltLogger rejoinLog = new VoltLogger("REJOIN");
+    private static final VoltLogger hostLog = new VoltLogger("HOST");
 
     private final Mailbox m_mb;
     private StreamSnapshotDataReceiver m_in = null;
@@ -56,6 +59,7 @@ public class StreamSnapshotSink {
     private StreamSnapshotAckSender m_ack = null;
     private Thread m_ackThread = null;
     private final AtomicInteger m_expectedEOFs = new AtomicInteger();
+    public static final AtomicBoolean m_constraintFailure  = new AtomicBoolean(false);
     private boolean m_EOF = false;
     // Schemas of the tables
     private final Map<Integer, byte[]> m_schemas = new HashMap<Integer, byte[]>();
@@ -141,9 +145,13 @@ public class StreamSnapshotSink {
 
             // Currently, only export cares about this TXN ID.  Since we don't have one handy,
             // just use Long.MIN_VALUE to match how m_openSpHandle is initialized in ee/storage/TupleStreamWrapper
-
-            connection.loadTable(Long.MIN_VALUE, Long.MIN_VALUE, Long.MIN_VALUE, tableId, table,
+            try {
+                connection.loadTable(Long.MIN_VALUE, Long.MIN_VALUE, Long.MIN_VALUE, tableId, table,
                     LoadTableCaller.SNAPSHOT_THROW_ON_UNIQ_VIOLATION);
+            } catch (ConstraintFailureException ex) {
+                hostLog.info("Rejoin constraint failure:", ex);
+                m_constraintFailure.set(true);
+            }
         }
     }
 

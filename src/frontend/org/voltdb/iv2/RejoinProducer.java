@@ -318,6 +318,9 @@ public class RejoinProducer extends JoinProducerBase {
                 returnToTaskQueue(sourcesReady);
             } else {
                 REJOINLOG.debug(m_whoami + "Rejoin snapshot transfer is finished");
+                if (StreamSnapshotSink.m_constraintFailure.get()) {
+                    VoltDB.crashLocalVoltDB("Constraint Violations found in rejoin snapshot");
+                }
                 m_rejoinSiteProcessor.close();
 
                 boolean allSitesFinishStreaming;
